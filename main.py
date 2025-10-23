@@ -1,4 +1,6 @@
-"API de de ejemplo para manejo de activos financieros"
+"""
+API de ejemplo para manejo de activos financieros. Este código define una API web simple usando FastAPI.
+"""
 
 
 from fastapi import FastAPI, HTTPException
@@ -7,7 +9,6 @@ from datetime import datetime, timedelta
 import yfinance as yf
 import uvicorn
 
-"Este código define una API web simple usando FastAPI"
 
 app = FastAPI() # Se crea una instancia de la aplicación FastAPI. Esta instancia se usa para definir rutas y manejar peticiones HTTP.
 
@@ -24,7 +25,7 @@ def get_stock(symbol: str): # El parámetro se espera como una cadena (ej. "AAPL
 # Ruta con parámetros de consulta (query parameters/parámetros de consulta)
 @app.get("/stocks/") # Define una ruta GET que espera recibir parámetros de consulta en la URL (lo que va después de ?).
 def get_stock_by_query(symbol: str, exchange: str = "NYSE"): # El parámetro symbol es obligatorio en la consulta; el parámetro exchange es opcional y tiene un valor por defecto ("NYSE").
-"Ejemplo de uso: /stocks/?symbol=TSLA&exchange=NASDAQ"
+# Ejemplo de uso: /stocks/?symbol=TSLA&exchange=NASDAQ
     return {"symbol": symbol, "exchange": exchange, "price": "120 USD"} # Devuelve un JSON con el símbolo, la bolsa y un precio (también ficticio).
 
 
@@ -35,7 +36,7 @@ def get_stock_by_query(symbol: str, exchange: str = "NYSE"): # El parámetro sym
 
 # Definición de la ruta:
 @app.get("/stocks/{symbol}/price") # Define una ruta HTTP GET tipo: /stocks/AAPL/price?date=2022-05-10
-def get_stock_price_on_date(symbol: str, date: str): # Usa un path parameter symbol (ej. "AAPL") y un query parameter date (ej. "2022-05-10").
+def get_stock_price_on_date(symbol: str, date: str): # Usa un 'path parameter' symbol (ej. "AAPL") y un 'query parameter' date (ej. "2022-05-10").
     """
     Obtiene el precio de la acción en una fecha específica o la fecha hábil más cercana.
     Parámetros:
@@ -188,3 +189,77 @@ def delete_portfolio(user_id: str): # la función espera que se le pase el ID de
     del portfolios_db[user_id] # Si pasa la validación, se elimina el portafolio del diccionario portfolios_db usando la palabra clave del.
     
     return {"message": f"Portafolio eliminado para el usuario {user_id}"}
+
+    ########################################################################################################################################
+
+    # Método HTTP - GET:
+    # Dos Endpoints con método GET, uno para verificar cartera, otro calcula el rendimiento del portafolio dado el user_id y las fechas de inicio y fin
+
+@app.get("/portfolios/{user_id}")
+def get_portfolio(user_id: str):
+    """
+    Obtiene el portafolio de un usuario.
+    Parámetros:
+    - user_id: ID único del usuario.
+
+    Retorna:
+    El portafolio del usuario.
+    """
+    if user_id not in portfolios_db:
+        raise HTTPException(status_code=404, detail="Portafolio no encontrado para este usuario")
+
+    return {"user_id": user_id, "portfolio": portfolios_db[user_id]}
+
+
+@app.get("/portfolios/{user_id}/performance")
+def get_portfolio_performance(user_id: str, start_date: str, end_date: str):
+    """
+    Calcula el rendimiento del portafolio de un usuario en un período de tiempo.
+    Parámetros:
+    - user_id: ID único del usuario.
+    - start_date: Fecha de inicio en formato YYYY-MM-DD.
+    - end_date: Fecha de fin en formato YYYY-MM-DD.
+
+    Retorna:
+    El rendimiento total del portafolio en el período de tiempo seleccionado
+    """
+    # Verificar si el usuario tiene un portafolio guardado
+    if user_id not in portfolios_db:
+        raise HTTPException(status_code=404, detail="Portafolio no encontrado para este usuario")
+
+    portfolio = portfolios_db[user_id]
+
+    # Validamos el formato de las fechas
+    try:
+        datetime.strptime(start_date, "%Y-%m-%d")
+        datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido, debe ser YYYY-MM-DD")
+
+    # Obtener los precios históricos de las acciones
+    total_return = 0
+    for stock, weight in portfolio.items():
+        ticker = yf.Ticker(stock)
+        history = ticker.history(start=start_date, end=end_date)
+
+        if history.empty:
+            raise HTTPException(status_code=404, detail=f"No hay datos disponibles para la acción {stock} en el período seleccionado")
+
+        # Calcular el rendimiento de la acción
+        initial_price = history['Close'].iloc[0]
+        final_price = history['Close'].iloc[-1]
+        stock_return = (final_price - initial_price) / initial_price
+
+        # Ponderar el rendimiento por la ponderación en el portafolio
+        weighted_return = stock_return * (weight / 100)
+        total_return += weighted_return
+
+    # Pasamos a porcentaje
+    total_return = round(total_return * 100, 2)
+
+    return {
+        "user_id": user_id,
+        "total_return": total_return,
+        "start_date": start_date,
+        "end_date": end_date
+    }
